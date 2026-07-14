@@ -52,6 +52,14 @@
            overflow: hidden; text-overflow: ellipsis; }
   .toast.show { opacity: 1; }
   input[type=range] { vertical-align: middle; width: 180px; }
+  .tmpl { margin: 14px 0; font-size: 13px; border: 1px solid rgba(128,128,128,.3);
+          border-radius: 8px; padding: 6px 10px; }
+  .tmpl summary { cursor: pointer; font-weight: 600; }
+  .tmpl input[type=text] { padding: 6px 8px; border-radius: 6px; border: 1px solid #bbb; width: 220px; }
+  .hint { opacity: .75; margin: 6px 0; line-height: 1.4; }
+  #tmplmsg.ok { color: #0a8f4a; opacity: 1; font-weight: 600; }
+  #tmplmsg.err { color: #d13438; opacity: 1; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { .tmpl input[type=text] { background: #2a2d34; color: #e8e8e8; border-color: #555; } }
 </style>
 </head>
 <body>
@@ -84,6 +92,20 @@
       <button id="copybtn">Copy all</button>
       <button id="clearbtn" class="danger">Clear list</button>
     </div>
+    <details class="tmpl">
+      <summary>Add / manage templates from a spreadsheet</summary>
+      <div class="hint">Upload a CSV that looks like your target sheet — it must contain a
+        <b>Serial #</b> column header. Give it a name; it becomes an export format. Scanned
+        serials fill the Serial column; a <b>Chromebook #</b> column (if present) is auto-numbered.
+        (Export a Google Sheets/Excel tab as <b>.csv</b> to use it here.)</div>
+      <div class="field"><input type="text" id="tmplname" placeholder="Template name (e.g. HS Cart 1)"></div>
+      <div class="field"><input type="file" id="tmplfile" accept=".csv,.tsv,.txt"></div>
+      <div>
+        <button id="tmpladd">Save template</button>
+        <button id="tmpldel" class="danger">Delete selected template</button>
+      </div>
+      <div id="tmplmsg" class="hint"></div>
+    </details>
     <div class="count"><span id="count">0</span> Chromebooks scanned</div>
     <table>
       <thead><tr><th>Chromebook #</th><th>Serial #</th><th>Time</th><th></th></tr></thead>
@@ -10409,9 +10431,8 @@ function csvEscape(s) {
   return s;
 }
 // ---- CSV export formats ----
-// Each entry returns the full CSV text. Add new layouts here and they appear
-// in the "Export format" dropdown automatically.
-var FORMATS = {
+// Built-in format(s). Each returns the full CSV text.
+var BUILTIN = {
   'Chromebook S/N Entry': function () {
     // Row1: TEACHER | ROOM# ,  Row2: Chromebook # | Serial # | Student Assigned
     // Column A pre-numbered 1..30 (grows if more scanned); serials fill column B from B3 down.
@@ -10427,22 +10448,129 @@ var FORMATS = {
   }
 };
 
-// Populate the format dropdown from the registry above.
+// User templates uploaded from a spreadsheet, persisted in localStorage.
+var TPL_KEY = 'cbScannerTemplates';
+var templates = {};   // name -> { grid, serialCol, numCol, dataStart }
+try { templates = JSON.parse(localStorage.getItem(TPL_KEY) || '{}'); } catch (e) { templates = {}; }
+function saveTemplates() {
+  try { localStorage.setItem(TPL_KEY, JSON.stringify(templates)); } catch (e) {}
+}
+
+// Minimal CSV parser (handles quoted fields, embedded commas/newlines, "" escapes).
+function parseCSV(text) {
+  var rows = [], row = [], cur = '', inQ = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    } else if (c === '"') { inQ = true; }
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (c === '\r') { /* skip */ }
+    else cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+// Locate the header row / serial column / chromebook-number column in a template grid.
+function analyzeTemplate(grid) {
+  for (var r = 0; r < grid.length; r++) {
+    var serialCol = -1, numCol = -1;
+    for (var c = 0; c < grid[r].length; c++) {
+      var v = String(grid[r][c] || '').trim().toLowerCase();
+      if (serialCol < 0 && v.indexOf('serial') >= 0) serialCol = c;
+      if (numCol < 0 && (v.indexOf('chromebook') >= 0 || v === '#' || v.indexOf('device #') >= 0)) numCol = c;
+    }
+    if (serialCol >= 0) return { serialCol: serialCol, numCol: (numCol >= 0 ? numCol : null), dataStart: r + 1 };
+  }
+  return null;   // no "Serial #" header found
+}
+
+// Build CSV from a template: keep the template verbatim, inject scanned serials
+// into the serial column from the first data row down; number appended rows.
+function buildFromTemplate(t) {
+  var grid = t.grid.map(function (row) { return row.slice(); });
+  var width = (grid[t.dataStart - 1] || []).length || (t.serialCol + 1);
+  for (var i = 0; i < records.length; i++) {
+    var ri = t.dataStart + i;
+    if (!grid[ri]) {
+      grid[ri] = new Array(width).fill('');
+      if (t.numCol != null) grid[ri][t.numCol] = String(i + 1);
+    }
+    while (grid[ri].length <= t.serialCol) grid[ri].push('');
+    grid[ri][t.serialCol] = records[i].data;
+  }
+  return grid.map(function (row) {
+    return row.map(function (cell) { return csvEscape(String(cell == null ? '' : cell)); }).join(',');
+  }).join('\n');
+}
+
+function csvFor(name) {
+  if (BUILTIN[name]) return BUILTIN[name]();
+  if (templates[name]) return buildFromTemplate(templates[name]);
+  return BUILTIN['Chromebook S/N Entry']();
+}
+
+// Populate the dropdown from built-ins + saved templates.
 var fmtsel = document.getElementById('fmtsel');
-Object.keys(FORMATS).forEach(function (name) {
-  var o = document.createElement('option');
-  o.value = name; o.textContent = name;
-  fmtsel.appendChild(o);
-});
+function rebuildFormats(selectName) {
+  fmtsel.innerHTML = '';
+  Object.keys(BUILTIN).concat(Object.keys(templates)).forEach(function (name) {
+    var o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    fmtsel.appendChild(o);
+  });
+  if (selectName) fmtsel.value = selectName;
+}
+rebuildFormats();
 
 document.getElementById('csvbtn').onclick = function () {
-  var name = fmtsel.value || Object.keys(FORMATS)[0];
-  var csv = FORMATS[name]();
-  var blob = new Blob([csv], { type: 'text/csv' });
+  var name = fmtsel.value || Object.keys(BUILTIN)[0];
+  var blob = new Blob([csvFor(name)], { type: 'text/csv' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'chromebooks_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.download = name.replace(/[^\w-]+/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.csv';
   a.click();
+};
+
+// ---- Template add / delete ----
+var tmplmsg = document.getElementById('tmplmsg');
+function setTmplMsg(msg, cls) { tmplmsg.textContent = msg; tmplmsg.className = 'hint' + (cls ? ' ' + cls : ''); }
+
+document.getElementById('tmpladd').onclick = function () {
+  var name = document.getElementById('tmplname').value.trim();
+  var fileEl = document.getElementById('tmplfile');
+  if (!name) { setTmplMsg('Enter a template name first.', 'err'); return; }
+  if (BUILTIN[name]) { setTmplMsg('That name is reserved by a built-in format.', 'err'); return; }
+  if (!fileEl.files || !fileEl.files[0]) { setTmplMsg('Choose a .csv file to use as the template.', 'err'); return; }
+  if (templates[name] && !confirm('Replace existing template "' + name + '"?')) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var grid = parseCSV(String(reader.result));
+    var info = analyzeTemplate(grid);
+    if (!info) { setTmplMsg('No "Serial #" column found in that file. Add a Serial # header and retry.', 'err'); return; }
+    templates[name] = { grid: grid, serialCol: info.serialCol, numCol: info.numCol, dataStart: info.dataStart };
+    saveTemplates();
+    rebuildFormats(name);
+    document.getElementById('tmplname').value = '';
+    fileEl.value = '';
+    setTmplMsg('Saved template "' + name + '" (serials go in column ' +
+      String.fromCharCode(65 + info.serialCol) + '). It is now selected.', 'ok');
+  };
+  reader.readAsText(fileEl.files[0]);
+};
+
+document.getElementById('tmpldel').onclick = function () {
+  var name = fmtsel.value;
+  if (BUILTIN[name]) { setTmplMsg('Built-in formats cannot be deleted.', 'err'); return; }
+  if (!templates[name]) { setTmplMsg('Select a saved template to delete.', 'err'); return; }
+  if (!confirm('Delete template "' + name + '"?')) return;
+  delete templates[name];
+  saveTemplates();
+  rebuildFormats();
+  setTmplMsg('Deleted template "' + name + '".', 'ok');
 };
 document.getElementById('copybtn').onclick = function () {
   var txt = records.map(function (r) { return r.data; }).join('\n');
