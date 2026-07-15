@@ -80,6 +80,29 @@
   .gate input { width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:var(--card);
                 color:var(--ink); font-size:15px; margin-bottom:12px; }
   .hidden { display:none !important; }
+
+  /* Tabs */
+  .tabs { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--line); }
+  .tab { padding:9px 18px; border:none; background:transparent; color:var(--muted); cursor:pointer;
+         font-size:14px; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-1px; }
+  .tab.active { color:var(--ink); border-bottom-color:var(--blue); }
+
+  /* Reports */
+  .rnote { font-size:12px; color:var(--muted); margin:0 2px 12px; }
+  .reports { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:760px){ .reports { grid-template-columns:1fr; } }
+  .chart-card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .chart-card h3 { margin:0 0 14px; font-size:14px; }
+  .bar-row { display:flex; align-items:center; gap:10px; margin:9px 0; font-size:13px; }
+  .bar-row .lbl { width:118px; flex:none; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-track { flex:1; background:rgba(127,127,127,.12); border-radius:6px; height:18px; }
+  .bar-fill { height:100%; border-radius:6px; min-width:3px; }
+  .bar-row .val { width:28px; flex:none; font-weight:700; }
+  .vbars { display:flex; align-items:flex-end; gap:5px; height:150px; }
+  .vcol { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:100%; }
+  .vnum { font-size:10px; color:var(--muted); margin-bottom:2px; }
+  .vbar { width:72%; border-radius:4px 4px 0 0; min-height:2px; background:#2f6fe0; }
+  .vcap { font-size:10px; color:var(--muted); margin-top:5px; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -90,7 +113,7 @@
     <div class="t2">Columbus Preparatory Academy · Chromebook help desk</div>
   </div>
   <div class="spacer"></div>
-  <button id="refreshbtn" class="hidden">↻ Refresh</button>
+  <button id="refreshbtn" class="hidden" title="Auto-refreshes every 15 minutes">↻ Refresh</button>
   <button id="signoutbtn" class="hidden">Sign out</button>
 </div>
 <div class="accent"></div>
@@ -107,26 +130,35 @@
 
   <!-- App -->
   <div id="app" class="hidden">
+    <div class="tabs">
+      <button id="tabTickets" class="tab active">Tickets</button>
+      <button id="tabReports" class="tab">Reports</button>
+    </div>
     <div class="stats" id="stats"></div>
-    <div class="controls">
-      <input type="search" id="search" placeholder="Search S/N, teacher, issue, notes…">
-      <select id="fStatus">
-        <option value="">All statuses</option>
-        <option>New</option><option>In Progress</option><option>Waiting</option><option>Resolved</option>
-      </select>
-      <select id="fUrgency">
-        <option value="">All urgency</option>
-        <option>High</option><option>Medium</option><option>Low</option>
-      </select>
-      <label class="muted" style="font-size:13px"><input type="checkbox" id="hideResolved"> Hide resolved</label>
+
+    <div id="ticketsView">
+      <div class="controls">
+        <input type="search" id="search" placeholder="Search S/N, teacher, issue, notes…">
+        <select id="fStatus">
+          <option value="">All statuses</option>
+          <option>New</option><option>In Progress</option><option>Waiting</option><option>Resolved</option>
+        </select>
+        <select id="fUrgency">
+          <option value="">All urgency</option>
+          <option>High</option><option>Medium</option><option>Low</option>
+        </select>
+        <label class="muted" style="font-size:13px"><input type="checkbox" id="hideResolved"> Hide resolved</label>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr id="head"></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="empty" class="empty hidden">No tickets match.</div>
+      </div>
     </div>
-    <div class="tablewrap">
-      <table>
-        <thead><tr id="head"></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <div id="empty" class="empty hidden">No tickets match.</div>
-    </div>
+
+    <div id="reportsView" class="hidden"></div>
   </div>
 </div>
 <div id="toast" class="toast"></div>
@@ -150,8 +182,7 @@ var COLS = [
   { k: 'timestamp', label: 'Submitted' },
   { k: 'status', label: 'Status' },
   { k: 'notes', label: 'Notes' },
-  { k: 'description', label: 'Description' },
-  { k: '_act', label: '' }
+  { k: 'description', label: 'Description' }
 ];
 
 // ---- JSONP (avoids CORS with Apps Script) ----
@@ -197,18 +228,32 @@ document.getElementById('signinbtn').onclick = function () {
 };
 document.getElementById('signoutbtn').onclick = function () {
   localStorage.removeItem(TOKEN_KEY); token = ''; tickets = [];
+  stopAuto();
   showApp(false);
 };
 document.getElementById('refreshbtn').onclick = function () { load(false); };
 
+// ---- Auto-refresh (every 15 minutes) ----
+var AUTO_MS = 15 * 60 * 1000;
+var autoTimer = null;
+function startAuto() { stopAuto(); autoTimer = setInterval(autoRefresh, AUTO_MS); }
+function stopAuto() { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } }
+function autoRefresh() {
+  // Don't interrupt an in-progress edit (a focused status/notes field).
+  var ae = document.activeElement;
+  if (ae && (ae.classList.contains('notes') || ae.classList.contains('status'))) return;
+  load(false, { auto: true });
+}
+
 // ---- Load ----
-function load(fromGate) {
+function load(fromGate, opts) {
+  opts = opts || {};
   var gatemsg = document.getElementById('gatemsg');
   gatemsg.textContent = '';
   jsonp({ action: 'list', token: token }).then(function (res) {
     if (!res || res.ok === false) {
       if (res && res.error === 'unauthorized') {
-        gatemsg.textContent = 'Wrong token.'; showApp(false); return;
+        gatemsg.textContent = 'Wrong token.'; showApp(false); stopAuto(); return;
       }
       throw new Error((res && res.error) || 'Failed to load');
     }
@@ -216,7 +261,8 @@ function load(fromGate) {
     tickets = res.rows || [];
     showApp(true);
     render();
-    if (!fromGate) toast('Refreshed — ' + tickets.length + ' tickets');
+    startAuto();   // (re)start the 15-min clock from the latest load
+    if (!fromGate) toast((opts.auto ? 'Auto-refreshed — ' : 'Refreshed — ') + tickets.length + ' tickets');
   }).catch(function (err) {
     if (fromGate) gatemsg.textContent = err.message;
     else toast('Error: ' + err.message);
@@ -309,7 +355,6 @@ function render() {
       '<td><select class="status" data-row="' + t.row + '">' + statusOpts + '</select></td>' +
       '<td><input class="notes" data-row="' + t.row + '" value="' + esc(t.notes) + '" placeholder="Add note…"></td>' +
       '<td class="desc" title="' + esc(t.description) + '">' + descShort + '</td>' +
-      '<td class="actions"><button title="Delete" data-del="' + t.row + '">🗑</button></td>' +
       '</tr>';
   }).join('');
 
@@ -319,9 +364,7 @@ function render() {
   Array.prototype.forEach.call(tb.querySelectorAll('input.notes'), function (inp) {
     inp.onchange = function () { updateField(inp.getAttribute('data-row'), { notes: inp.value }); };
   });
-  Array.prototype.forEach.call(tb.querySelectorAll('button[data-del]'), function (b) {
-    b.onclick = function () { del(b.getAttribute('data-del')); };
-  });
+  if (activeTab === 'reports') renderReports();
 }
 
 function localRow(row) { return tickets.filter(function (t) { return String(t.row) === String(row); })[0]; }
@@ -339,13 +382,74 @@ function updateField(row, fields) {
   }).catch(function (err) { toast('Save failed: ' + err.message + ' — refresh'); });
 }
 
-function del(row) {
-  var t = localRow(row);
-  if (!confirm('Delete this ticket' + (t ? ' (' + t.sn + ')' : '') + '? This removes the row from the Sheet.')) return;
-  jsonp({ action: 'delete', token: token, row: row }).then(function (res) {
-    if (!res || res.ok === false) throw new Error((res && res.error) || 'delete failed');
-    toast('Deleted'); load(false);
-  }).catch(function (err) { toast('Delete failed: ' + err.message); });
+// ---- Reports (charts from the currently loaded tickets) ----
+var activeTab = 'tickets';
+document.getElementById('tabTickets').onclick = function () { setTab('tickets'); };
+document.getElementById('tabReports').onclick = function () { setTab('reports'); };
+function setTab(t) {
+  activeTab = t;
+  document.getElementById('tabTickets').classList.toggle('active', t === 'tickets');
+  document.getElementById('tabReports').classList.toggle('active', t === 'reports');
+  document.getElementById('ticketsView').classList.toggle('hidden', t !== 'tickets');
+  document.getElementById('reportsView').classList.toggle('hidden', t !== 'reports');
+  if (t === 'reports') renderReports();
+}
+
+function barChart(items) {
+  var max = Math.max.apply(null, items.map(function (i) { return i.value; }).concat([1]));
+  var rows = items.map(function (i) {
+    var pct = Math.round(i.value / max * 100);
+    return '<div class="bar-row" title="' + esc(i.label) + ': ' + i.value + '">' +
+      '<div class="lbl">' + esc(i.label) + '</div>' +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + (i.color || '#2f6fe0') + '"></div></div>' +
+      '<div class="val">' + i.value + '</div></div>';
+  }).join('');
+  return rows || '<div class="rnote">No data.</div>';
+}
+
+function dayTrend() {
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var days = [];
+  for (var k = 13; k >= 0; k--) { var d = new Date(today); d.setDate(d.getDate() - k); days.push({ d: d, n: 0 }); }
+  tickets.forEach(function (t) {
+    if (!t.timestamp) return;
+    var dt = new Date(t.timestamp); dt.setHours(0, 0, 0, 0);
+    for (var j = 0; j < days.length; j++) { if (days[j].d.getTime() === dt.getTime()) { days[j].n++; break; } }
+  });
+  var max = Math.max.apply(null, days.map(function (x) { return x.n; }).concat([1]));
+  return '<div class="vbars">' + days.map(function (x) {
+    var h = Math.round(x.n / max * 100);
+    var lbl = (x.d.getMonth() + 1) + '/' + x.d.getDate();
+    return '<div class="vcol" title="' + lbl + ': ' + x.n + '">' +
+      (x.n ? '<div class="vnum">' + x.n + '</div>' : '') +
+      '<div class="vbar" style="height:' + h + '%"></div>' +
+      '<div class="vcap">' + lbl + '</div></div>';
+  }).join('') + '</div>';
+}
+
+function renderReports() {
+  var uColor = { High: '#d13438', Medium: '#c47d00', Low: '#6b7280' };
+  var byUrg = ['High', 'Medium', 'Low'].map(function (u) {
+    return { label: u, color: uColor[u], value: tickets.filter(function (t) { return t.urgency === u; }).length };
+  });
+  var sColor = { 'New': '#0E1DA2', 'In Progress': '#c47d00', 'Waiting': '#6b7280', 'Resolved': '#0a8f4a' };
+  var byStatus = STATUSES.map(function (s) {
+    return { label: s, color: sColor[s], value: tickets.filter(function (t) { return (t.status || 'New') === s; }).length };
+  });
+  var im = {};
+  tickets.forEach(function (t) { var k = t.issue || '(none)'; im[k] = (im[k] || 0) + 1; });
+  var byIssue = Object.keys(im).map(function (k) { return { label: k, value: im[k] }; })
+    .sort(function (a, b) { return b.value - a.value; }).slice(0, 8);
+
+  document.getElementById('reportsView').innerHTML =
+    '<div class="rnote">Reflects current (non-archived) tickets — ' + tickets.length + ' total. ' +
+      'Past months live in their own <b>[Month+YY]_Tickets</b> sheet tabs.</div>' +
+    '<div class="reports">' +
+      '<div class="chart-card"><h3>By urgency</h3>' + barChart(byUrg) + '</div>' +
+      '<div class="chart-card"><h3>By status</h3>' + barChart(byStatus) + '</div>' +
+      '<div class="chart-card"><h3>Top issue types</h3>' + barChart(byIssue) + '</div>' +
+      '<div class="chart-card"><h3>New tickets · last 14 days</h3>' + dayTrend() + '</div>' +
+    '</div>';
 }
 
 // filters

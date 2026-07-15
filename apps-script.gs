@@ -31,14 +31,12 @@ var HEADERS = [
 function doGet(e) {
   var p = (e && e.parameter) || {};
   var out;
-  if (['list', 'update', 'delete'].indexOf(p.action) >= 0 && p.token !== ADMIN_TOKEN) {
+  if (['list', 'update'].indexOf(p.action) >= 0 && p.token !== ADMIN_TOKEN) {
     out = { ok: false, error: 'unauthorized' };
   } else if (p.action === 'list') {
     out = listTickets_();
   } else if (p.action === 'update') {
     out = updateTicket_(p);
-  } else if (p.action === 'delete') {
-    out = deleteTicket_(p);
   } else {
     out = { ok: true, msg: 'CPA IT Tickets endpoint is live.' };
   }
@@ -84,11 +82,41 @@ function updateTicket_(p) {
   return { ok: true };
 }
 
-function deleteTicket_(p) {
-  var row = parseInt(p.row, 10);
-  if (!row || row < 2) return { ok: false, error: 'bad row' };
-  firstSheet_().deleteRow(row);
-  return { ok: true };
+// ---- Monthly archive ----
+// Run setupMonthlyArchive() ONCE to install a trigger that fires on the 1st of each month.
+// It moves all rows out of the live tickets sheet into a new tab named "[Mon][YY]_Tickets"
+// for the PREVIOUS month (e.g. run Aug 1 -> "Jul26_Tickets"), leaving the live sheet empty
+// (headers kept) for the new month.
+var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function setupMonthlyArchive() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'archiveMonthly') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('archiveMonthly').timeBased().onMonthDay(1).atHour(1).create();
+}
+
+function archiveMonthly() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var src = ss.getSheets()[0];
+  var lastRow = src.getLastRow();
+  if (lastRow < 2) return;                      // nothing to archive
+  var lastCol = Math.max(HEADERS.length, src.getLastColumn());
+
+  var prev = new Date();
+  prev = new Date(prev.getFullYear(), prev.getMonth() - 1, 1);   // first day of previous month
+  var name = MONTHS[prev.getMonth()] + String(prev.getFullYear()).slice(-2) + '_Tickets';
+  if (ss.getSheetByName(name)) {
+    name += '_' + Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'MMddHHmm');
+  }
+
+  var dest = ss.insertSheet(name, ss.getNumSheets());
+  var all = src.getRange(1, 1, lastRow, lastCol).getValues();    // include header row
+  dest.getRange(1, 1, all.length, lastCol).setValues(all);
+  dest.getRange(1, 1, 1, lastCol).setFontWeight('bold');
+  dest.setFrozenRows(1);
+
+  src.getRange(2, 1, lastRow - 1, lastCol).clearContent();       // empty the live sheet, keep headers
 }
 
 function doPost(e) {
