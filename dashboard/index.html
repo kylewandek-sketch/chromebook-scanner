@@ -449,7 +449,28 @@ function renderReports() {
       '<div class="chart-card"><h3>By status</h3>' + barChart(byStatus) + '</div>' +
       '<div class="chart-card"><h3>Top issue types</h3>' + barChart(byIssue) + '</div>' +
       '<div class="chart-card"><h3>New tickets · last 14 days</h3>' + dayTrend() + '</div>' +
+    '</div>' +
+    '<div class="chart-card" style="margin-top:14px">' +
+      '<h3>Archive</h3>' +
+      '<div class="rnote">Test the monthly archive: copies current tickets into a new ' +
+        '<b>[Month+YY]_Tickets</b> tab. This test does <b>not</b> clear the live sheet.</div>' +
+      '<button class="btn" id="testArchiveBtn">⧉ Run test archive (no clear)</button>' +
     '</div>';
+
+  document.getElementById('testArchiveBtn').onclick = testArchive;
+}
+
+function testArchive() {
+  var btn = document.getElementById('testArchiveBtn');
+  var label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Archiving…';
+  jsonp({ action: 'archiveTest', token: token }).then(function (res) {
+    btn.disabled = false; btn.textContent = label;
+    if (!res || res.ok === false) { toast('Test archive: ' + ((res && res.error) || 'failed')); return; }
+    toast('Created tab “' + res.name + '” (' + res.rows + ' rows) — live sheet NOT cleared.');
+  }).catch(function (err) {
+    btn.disabled = false; btn.textContent = label; toast('Test archive failed: ' + err.message);
+  });
 }
 
 // filters

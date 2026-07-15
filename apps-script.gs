@@ -31,12 +31,14 @@ var HEADERS = [
 function doGet(e) {
   var p = (e && e.parameter) || {};
   var out;
-  if (['list', 'update'].indexOf(p.action) >= 0 && p.token !== ADMIN_TOKEN) {
+  if (['list', 'update', 'archiveTest'].indexOf(p.action) >= 0 && p.token !== ADMIN_TOKEN) {
     out = { ok: false, error: 'unauthorized' };
   } else if (p.action === 'list') {
     out = listTickets_();
   } else if (p.action === 'update') {
     out = updateTicket_(p);
+  } else if (p.action === 'archiveTest') {
+    out = archiveCopy_(false);   // dashboard button: copy to a tab, do NOT clear the live sheet
   } else {
     out = { ok: true, msg: 'CPA IT Tickets endpoint is live.' };
   }
@@ -96,11 +98,17 @@ function setupMonthlyArchive() {
   ScriptApp.newTrigger('archiveMonthly').timeBased().onMonthDay(1).atHour(1).create();
 }
 
-function archiveMonthly() {
+// The scheduled trigger calls this — real archive, which clears the live sheet.
+function archiveMonthly() { archiveCopy_(true); }
+
+// Copies header + all data rows into a new "[Mon][YY]_Tickets" tab (previous month).
+// clear=true empties the live sheet afterward (real monthly run);
+// clear=false leaves it intact (dashboard "test archive" button).
+function archiveCopy_(clear) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var src = ss.getSheets()[0];
   var lastRow = src.getLastRow();
-  if (lastRow < 2) return;                      // nothing to archive
+  if (lastRow < 2) return { ok: false, error: 'No tickets to archive.' };
   var lastCol = Math.max(HEADERS.length, src.getLastColumn());
 
   var prev = new Date();
@@ -116,7 +124,8 @@ function archiveMonthly() {
   dest.getRange(1, 1, 1, lastCol).setFontWeight('bold');
   dest.setFrozenRows(1);
 
-  src.getRange(2, 1, lastRow - 1, lastCol).clearContent();       // empty the live sheet, keep headers
+  if (clear) src.getRange(2, 1, lastRow - 1, lastCol).clearContent();   // keep headers
+  return { ok: true, name: name, rows: lastRow - 1, cleared: !!clear };
 }
 
 function doPost(e) {
