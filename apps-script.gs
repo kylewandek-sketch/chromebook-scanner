@@ -92,7 +92,8 @@ function sendEmail_(data, now) {
 
   var options = { name: 'Chromebook Help Desk' };
   if (data.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) {
-    options.replyTo = data.email;   // reply goes straight to the teacher
+    options.replyTo = data.email;   // reply goes straight to the submitting teacher
+    options.cc = data.email;        // CC the submitter so they have a copy
   }
   MailApp.sendEmail(HELPDESK_EMAIL, subject, body, options);
 }
