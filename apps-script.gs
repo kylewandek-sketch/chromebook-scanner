@@ -3,7 +3,7 @@ var ADMIN_TOKEN = 'CHANGE_ME';   // set your own; do NOT commit the real token t
 
 // Drive folder that ticket photos are saved into. The account running this script
 // must have EDIT access to it. Falls back to a folder on the script's own Drive.
-var PHOTO_FOLDER_ID = '17cTg5MESNSdgb_ZWt_e3Lm2t3bqDShQq';
+var PHOTO_FOLDER_ID = '1CTMn-eBkvMjUN69ALhYd0UvO71Cc0mUN';
 var PHOTO_FOLDER_FALLBACK = 'CPA IT Ticket Photos';
 
 // Native Google Sheet holding the cart rosters (HS_Cart_1..6, HS_Spares, ...).
