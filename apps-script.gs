@@ -18,7 +18,7 @@ var HELPDESK_EMAIL = 'kyle.anderson@cpaohio.org';
 
 // Shared secret the dashboard must send to read/modify tickets. Change this to your own
 // random string if you like — just update it in the dashboard the first time you sign in.
-var ADMIN_TOKEN = 'de5c23a248ee2d5a66e65ec8';
+var ADMIN_TOKEN = 'CHANGE_ME';   // set your own; do NOT commit the real token to this public repo
 
 // Column order. Column A is the Chromebook S/N, as required. (Notes is added as column 10.)
 var HEADERS = [
