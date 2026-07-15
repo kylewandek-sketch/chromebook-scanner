@@ -90,12 +90,11 @@ function sendEmail_(data, now) {
   ];
   var body = lines.join('\n');
 
-  var options = { name: 'Chromebook Help Desk' };
-  if (data.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) {
-    options.replyTo = data.email;   // reply goes straight to the submitting teacher
-    options.cc = data.email;        // CC the submitter so they have a copy
-  }
-  MailApp.sendEmail(HELPDESK_EMAIL, subject, body, options);
+  // Send FROM the deploying account (you) TO the address in the "Your email" field.
+  // If no valid email was entered, fall back to the help desk address.
+  var valid = data.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email);
+  var recipient = valid ? data.email : HELPDESK_EMAIL;
+  MailApp.sendEmail(recipient, subject, body, { name: 'Chromebook Help Desk' });
 }
 
 function jsonOut_(obj) {

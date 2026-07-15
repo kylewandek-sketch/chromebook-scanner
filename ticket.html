@@ -10408,7 +10408,8 @@ function showDone(p) {
   var card = form;
   card.innerHTML = '<div class="done"><div class="big-check">✅</div>' +
     '<h2>Ticket submitted</h2>' +
-    '<p>Thanks! A ticket for <b>' + escapeHtml(p.sn) + '</b> was logged and emailed to the help desk.</p>' +
+    '<p>Thanks! A ticket for <b>' + escapeHtml(p.sn) + '</b> was logged and a copy emailed to you' +
+    (p.email ? ' at ' + escapeHtml(p.email) : '') + '.</p>' +
     '<button type="button" class="primary" onclick="location.reload()">Submit another</button></div>';
 }
 function escapeHtml(s) {
