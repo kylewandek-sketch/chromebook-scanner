@@ -87,14 +87,16 @@ function sendEmail_(data, now) {
     'Teacher email:  ' + (data.email || '(none)'),
     'Room #:         ' + (data.room || ''),
     'Submitted at:   ' + now,
+    '',
+    HELPDESK_EMAIL,
   ];
   var body = lines.join('\n');
 
-  // Send FROM the deploying account (you) TO the address in the "Your email" field.
-  // If no valid email was entered, fall back to the help desk address.
+  // Send FROM the deploying account (you) TO the address in the "Your email" field,
+  // and CC the help desk. If no valid email was entered, fall back to the help desk address.
   var valid = data.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email);
   var recipient = valid ? data.email : HELPDESK_EMAIL;
-  MailApp.sendEmail(recipient, subject, body, { name: 'Chromebook Help Desk' });
+  MailApp.sendEmail(recipient, subject, body, { name: 'Chromebook Help Desk', cc: HELPDESK_EMAIL });
 }
 
 function jsonOut_(obj) {
