@@ -65,6 +65,18 @@
                 background:var(--card); color:var(--ink); font-size:12.5px; }
   td.age-red { color:var(--red); font-weight:700; }
   td.age-amber { color:var(--amber); font-weight:700; }
+  td.moreCell { text-align:right; width:1%; white-space:nowrap; }
+  .morebtn { background:none; border:1px solid var(--line); border-radius:7px; cursor:pointer;
+             color:var(--ink); padding:1px 10px; font-size:16px; line-height:1.3; }
+  .morebtn:hover { background:rgba(14,29,162,.08); }
+  .morebtn.open { background:var(--blue); color:#fff; border-color:var(--blue); }
+  tr.detail > td { background:rgba(127,127,127,.06); padding:14px 16px; }
+  .dgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px 16px; }
+  .dfield .dlabel { font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+                    color:var(--muted); margin-bottom:3px; }
+  .ddesc { margin-top:14px; font-size:13px; }
+  .ddesc b { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+             display:block; margin-bottom:3px; font-weight:600; }
   .desc { max-width:260px; color:var(--muted); }
   .desc .more { color:var(--blue); cursor:pointer; }
   td.actions button { background:none; border:none; color:var(--red); cursor:pointer; font-size:16px; }
@@ -175,21 +187,16 @@ var tickets = [];
 var sortKey = 'urgency', sortDir = -1;   // default: urgency High→Low
 var URANK = { High: 3, Medium: 2, Low: 1, '': 0 };
 
+// Visible columns stay narrow enough to avoid horizontal scroll; everything
+// else lives in the per-row detail panel behind the "…" button.
 var COLS = [
   { k: 'ticketNo', label: '#' },
   { k: 'urgency', label: 'Urgency' },
   { k: 'sn', label: 'S/N' },
   { k: 'issue', label: 'Issue' },
   { k: 'age', label: 'Age' },
-  { k: 'teacherEmail', label: 'Teacher' },
-  { k: 'room', label: 'Room' },
-  { k: 'timestamp', label: 'Submitted' },
   { k: 'status', label: 'Status' },
-  { k: 'assignedTo', label: 'Assigned' },
-  { k: 'studentAtFault', label: 'Student at fault' },
-  { k: 'notes', label: 'Notes' },
-  { k: 'photoUrl', label: 'Photo' },
-  { k: 'description', label: 'Description' }
+  { k: '_more', label: '' }
 ];
 
 function ageDays(t) {
@@ -259,7 +266,8 @@ function stopAuto() { if (autoTimer) { clearInterval(autoTimer); autoTimer = nul
 function autoRefresh() {
   // Don't interrupt an in-progress edit (a focused status/notes field).
   var ae = document.activeElement;
-  if (ae && (ae.classList.contains('notes') || ae.classList.contains('status'))) return;
+  if (ae && (ae.classList.contains('notes') || ae.classList.contains('status') ||
+             ae.classList.contains('edit'))) return;
   load(false, { auto: true });
 }
 
@@ -342,7 +350,7 @@ function renderStats() {
 
 function renderHead() {
   document.getElementById('head').innerHTML = COLS.map(function (c) {
-    if (c.k === '_act') return '<th></th>';
+    if (c.k === '_more') return '<th></th>';
     var arrow = sortKey === c.k ? ('<span class="arrow">' + (sortDir > 0 ? '▲' : '▼') + '</span>') : '';
     return '<th data-k="' + c.k + '">' + c.label + ' ' + arrow + '</th>';
   }).join('');
@@ -357,6 +365,27 @@ function renderHead() {
 }
 
 var STATUSES = ['New', 'In Progress', 'Waiting', 'Resolved'];
+
+function dfield(label, html) {
+  return '<div class="dfield"><div class="dlabel">' + label + '</div><div>' + html + '</div></div>';
+}
+function detailHtml(t) {
+  return '<div class="dgrid">' +
+      dfield('Teacher', esc(t.teacherEmail || t.teacherName) || '—') +
+      dfield('Room', esc(t.room) || '—') +
+      dfield('Submitted', esc(fmtDate(t.timestamp)) || '—') +
+      dfield('Photo', t.photoUrl
+        ? '<a href="' + esc(t.photoUrl) + '" target="_blank" rel="noopener">📷 open</a>' : '—') +
+      dfield('Assigned', '<input class="edit" data-field="assignedTo" data-row="' + t.row +
+        '" value="' + esc(t.assignedTo) + '" placeholder="—">') +
+      dfield('Student at fault', '<input class="edit" data-field="studentAtFault" data-row="' + t.row +
+        '" value="' + esc(t.studentAtFault) + '" placeholder="—">') +
+      dfield('Notes', '<input class="notes" data-row="' + t.row +
+        '" value="' + esc(t.notes) + '" placeholder="Add note…">') +
+    '</div>' +
+    '<div class="ddesc"><b>Description</b><div>' + (esc(t.description) || '—') + '</div></div>';
+}
+
 function render() {
   renderStats(); renderHead();
   var list = currentView();
@@ -368,23 +397,18 @@ function render() {
     }).join('');
     var u = t.urgency || '';
     var ai = ageInfo(t);
-    var descShort = esc((t.description || '').slice(0, 90)) + ((t.description || '').length > 90 ? '…' : '');
-    return '<tr class="' + ((t.status || 'New') === 'Resolved' ? 'resolved' : '') + '" data-row="' + t.row + '">' +
+    var main = '<tr class="' + ((t.status || 'New') === 'Resolved' ? 'resolved' : '') + '" data-row="' + t.row + '">' +
       '<td class="muted">' + esc(t.ticketNo) + '</td>' +
       '<td><span class="badge u-' + esc(u) + '">' + esc(u || '—') + '</span></td>' +
       '<td class="sn">' + esc(t.sn) + '</td>' +
       '<td>' + esc(t.issue) + '</td>' +
       '<td class="' + ai.cls + '">' + ai.text + '</td>' +
-      '<td>' + esc(t.teacherEmail || t.teacherName) + '</td>' +
-      '<td>' + esc(t.room) + '</td>' +
-      '<td class="muted">' + esc(fmtDate(t.timestamp)) + '</td>' +
       '<td><select class="status" data-row="' + t.row + '">' + statusOpts + '</select></td>' +
-      '<td><input class="edit" data-field="assignedTo" data-row="' + t.row + '" value="' + esc(t.assignedTo) + '" placeholder="—"></td>' +
-      '<td><input class="edit" data-field="studentAtFault" data-row="' + t.row + '" value="' + esc(t.studentAtFault) + '" placeholder="—"></td>' +
-      '<td><input class="notes" data-row="' + t.row + '" value="' + esc(t.notes) + '" placeholder="Add note…"></td>' +
-      '<td>' + (t.photoUrl ? '<a href="' + esc(t.photoUrl) + '" target="_blank" rel="noopener" title="Open photo">📷</a>' : '') + '</td>' +
-      '<td class="desc" title="' + esc(t.description) + '">' + descShort + '</td>' +
+      '<td class="moreCell"><button class="morebtn" data-more="' + t.row + '" title="Details">…</button></td>' +
       '</tr>';
+    var det = '<tr class="detail hidden" data-detail="' + t.row + '">' +
+      '<td colspan="' + COLS.length + '">' + detailHtml(t) + '</td></tr>';
+    return main + det;
   }).join('');
 
   Array.prototype.forEach.call(tb.querySelectorAll('select.status'), function (sel) {
@@ -397,6 +421,14 @@ function render() {
     inp.onchange = function () {
       var f = {}; f[inp.getAttribute('data-field')] = inp.value;
       updateField(inp.getAttribute('data-row'), f);
+    };
+  });
+  Array.prototype.forEach.call(tb.querySelectorAll('button[data-more]'), function (b) {
+    b.onclick = function () {
+      var det = tb.querySelector('tr[data-detail="' + b.getAttribute('data-more') + '"]');
+      if (!det) return;
+      var hidden = det.classList.toggle('hidden');
+      b.classList.toggle('open', !hidden);
     };
   });
   if (activeTab === 'reports') renderReports();
