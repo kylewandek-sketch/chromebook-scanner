@@ -96,7 +96,7 @@ function sendEmail_(data, now) {
   // and CC the help desk. If no valid email was entered, fall back to the help desk address.
   var valid = data.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email);
   var recipient = valid ? data.email : HELPDESK_EMAIL;
-  MailApp.sendEmail(recipient, subject, body, { name: 'Chromebook Help Desk', cc: HELPDESK_EMAIL });
+  MailApp.sendEmail(recipient, subject, body, { name: 'CPA IT Tickets', cc: HELPDESK_EMAIL });
 }
 
 function jsonOut_(obj) {
