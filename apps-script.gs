@@ -16,16 +16,79 @@
 
 var HELPDESK_EMAIL = 'kyle.anderson@cpaohio.org';
 
-// Column order. Column A is the Chromebook S/N, as required.
+// Shared secret the dashboard must send to read/modify tickets. Change this to your own
+// random string if you like — just update it in the dashboard the first time you sign in.
+var ADMIN_TOKEN = 'de5c23a248ee2d5a66e65ec8';
+
+// Column order. Column A is the Chromebook S/N, as required. (Notes is added as column 10.)
 var HEADERS = [
   'Chromebook S/N', 'Timestamp', 'Teacher Email', 'Teacher Name',
   'Room #', 'Issue Type', 'Urgency', 'Description', 'Status'
 ];
 
-function doGet() {
-  return ContentService
-    .createTextOutput('Chromebook Help Desk endpoint is live. Submit tickets via POST.')
-    .setMimeType(ContentService.MimeType.TEXT);
+// GET endpoint. Serves the management dashboard's data + edits (JSONP to avoid CORS).
+//   ?action=list|update|delete  &token=...  &callback=...
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  var out;
+  if (['list', 'update', 'delete'].indexOf(p.action) >= 0 && p.token !== ADMIN_TOKEN) {
+    out = { ok: false, error: 'unauthorized' };
+  } else if (p.action === 'list') {
+    out = listTickets_();
+  } else if (p.action === 'update') {
+    out = updateTicket_(p);
+  } else if (p.action === 'delete') {
+    out = deleteTicket_(p);
+  } else {
+    out = { ok: true, msg: 'CPA IT Tickets endpoint is live.' };
+  }
+  var json = JSON.stringify(out);
+  if (p.callback) {
+    return ContentService.createTextOutput(p.callback + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+}
+
+function firstSheet_() { return SpreadsheetApp.getActiveSpreadsheet().getSheets()[0]; }
+
+function ensureNotesHeader_(sheet) {
+  if (!sheet.getRange(1, 10).getValue()) sheet.getRange(1, 10).setValue('Notes');
+}
+
+function listTickets_() {
+  var sheet = firstSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { ok: true, rows: [] };
+  var lastCol = Math.max(10, sheet.getLastColumn());
+  var v = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var rows = v.map(function (r, i) {
+    return {
+      row: i + 2,
+      sn: r[0], timestamp: r[1] ? new Date(r[1]).toISOString() : '',
+      teacherEmail: r[2], teacherName: r[3], room: r[4],
+      issue: r[5], urgency: r[6], description: r[7],
+      status: r[8] || 'New', notes: r[9] || ''
+    };
+  });
+  return { ok: true, rows: rows };
+}
+
+function updateTicket_(p) {
+  var row = parseInt(p.row, 10);
+  if (!row || row < 2) return { ok: false, error: 'bad row' };
+  var sheet = firstSheet_();
+  ensureNotesHeader_(sheet);
+  if (p.status != null) sheet.getRange(row, 9).setValue(p.status);
+  if (p.notes != null) sheet.getRange(row, 10).setValue(p.notes);
+  return { ok: true };
+}
+
+function deleteTicket_(p) {
+  var row = parseInt(p.row, 10);
+  if (!row || row < 2) return { ok: false, error: 'bad row' };
+  firstSheet_().deleteRow(row);
+  return { ok: true };
 }
 
 function doPost(e) {
@@ -96,7 +159,8 @@ function sendEmail_(data, now) {
   // and CC the help desk. If no valid email was entered, fall back to the help desk address.
   var valid = data.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email);
   var recipient = valid ? data.email : HELPDESK_EMAIL;
-  MailApp.sendEmail(recipient, subject, body, { name: 'CPA IT Tickets', cc: HELPDESK_EMAIL });
+  MailApp.sendEmail(recipient, subject, body,
+    { name: 'CPA IT Tickets', cc: HELPDESK_EMAIL, replyTo: HELPDESK_EMAIL });
 }
 
 function jsonOut_(obj) {
