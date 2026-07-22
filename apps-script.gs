@@ -180,7 +180,7 @@ function stats_() {
 function deviceLookup_(p) {
   var sn = String(p.sn || '').trim();
   if (!sn) return { ok: false, error: 'No serial provided.' };
-  var out = { ok: true, sn: sn, assignments: [], tickets: [] };
+  var out = { ok: true, sn: sn, assignments: [], tickets: [], todos: [] };
 
   // 1) Roster assignment — serials live in column B of tabs whose B2 says "Serial #".
   try {
@@ -222,6 +222,24 @@ function deviceLookup_(p) {
     });
     out.tickets.sort(function (a, b) { return String(b.timestamp).localeCompare(String(a.timestamp)); });
   } catch (e) { out.ticketError = String(e); }
+
+  // 3) To-do items whose task text mentions this serial (Todos tab, column B).
+  //    Only matches tasks that actually contain the serial - cart-level items
+  //    without a serial in the text will not show here.
+  try {
+    var ts = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TODO_SHEET_NAME);
+    if (ts) {
+      ts.createTextFinder(sn).findAll().forEach(function (rng) {
+        if (rng.getColumn() !== 2) return;   // task text lives in column B
+        var row = rng.getRow();
+        if (row < 2) return;
+        var r = ts.getRange(row, 1, 1, TODO_HEADERS.length).getValues()[0];
+        var done = false;
+        if (r[2] === true || r[2] === 'TRUE') done = true;
+        out.todos.push({ id: String(r[0]), text: String(r[1]), done: done, group: String(r[5] || '') });
+      });
+    }
+  } catch (e) { out.todoError = String(e); }
 
   return out;
 }

@@ -10783,6 +10783,27 @@ function renderLookup(res) {
   }
   h += '</div>';
 
+  // To-do items that mention this serial (older backend versions don't send this).
+  var luTodos = res.todos || [];
+  h += '<div class="chart-card" style="margin-top:14px"><h3>To-do items (' + luTodos.length + ')</h3>';
+  if (!luTodos.length) {
+    h += '<div class="rnote">No to-do items mention this serial.</div>';
+  } else {
+    h += luTodos.map(function (t) {
+      var mark = '☐';
+      var textStyle = '';
+      if (t.done) {
+        mark = '☑';
+        textStyle = ' style="text-decoration:line-through;color:var(--muted)"';
+      }
+      var g = t.group;
+      if (!g) g = 'General';
+      return '<div style="margin:6px 0;font-size:14px">' + mark +
+        ' <b>' + esc(g) + ':</b><span' + textStyle + '> ' + esc(t.text) + '</span></div>';
+    }).join('');
+  }
+  h += '</div>';
+
   h += '<div class="chart-card" style="margin-top:14px"><h3>Ticket history (' + res.tickets.length + ')</h3>';
   if (!res.tickets.length) {
     h += '<div class="rnote">No tickets on record for this device.</div>';
