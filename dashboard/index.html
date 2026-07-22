@@ -105,12 +105,23 @@
   .tab.active { color:var(--ink); border-bottom-color:var(--blue); }
 
   /* To-Do */
-  .todo-add { display:flex; gap:8px; margin-bottom:14px; max-width:640px; }
+  .todo-add { display:flex; gap:8px; margin-bottom:14px; max-width:760px; }
   .todo-add input { flex:1; padding:9px 12px; border:1px solid var(--line); border-radius:8px;
                     background:var(--card); color:var(--ink); font-size:14px; }
-  .todo-list { list-style:none; margin:0; padding:0; max-width:860px; }
-  .todo-item { display:flex; align-items:flex-start; gap:10px; background:var(--card);
-               border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; }
+  .todo-add #todoGroup { flex:0 1 200px; }
+  .todo-list { margin:0; padding:0; max-width:860px; }
+  .todo-group { background:var(--card); border:1px solid var(--line); border-radius:10px;
+                margin-bottom:8px; overflow:hidden; }
+  .todo-ghead { display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer;
+                font-size:14px; font-weight:600; user-select:none; -webkit-user-select:none; }
+  .todo-ghead:hover { background:rgba(128,128,128,.06); }
+  .todo-ghead .chev { color:var(--muted); font-size:12px; width:12px; }
+  .todo-ghead .gname { flex:1; }
+  .todo-ghead .gcount { color:var(--muted); font-weight:400; font-size:13px; }
+  .todo-ghead.alldone .gname { text-decoration:line-through; color:var(--muted); }
+  .todo-ul { list-style:none; margin:0; padding:4px 10px 10px; border-top:1px solid var(--line); }
+  .todo-item { display:flex; align-items:flex-start; gap:10px; background:var(--page);
+               border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-top:6px; }
   .todo-item.dragging { opacity:.4; }
   .todo-item .handle { cursor:grab; color:var(--muted); font-size:15px; padding-top:1px;
                        user-select:none; -webkit-user-select:none; }
@@ -221,10 +232,12 @@
 
     <div id="todoView" class="hidden">
       <div class="todo-add">
-        <input type="text" id="todoNew" placeholder="New to-do…">
+        <input type="text" id="todoNew" placeholder="New task…">
+        <input type="text" id="todoGroup" list="todoGroups" placeholder="Cart / group…">
+        <datalist id="todoGroups"></datalist>
         <button class="btn primary" id="todoAddBtn">Add</button>
       </div>
-      <ul class="todo-list" id="todoList"></ul>
+      <div class="todo-list" id="todoList"></div>
       <div id="todoEmpty" class="empty hidden">No to-dos yet. Add one above.</div>
     </div>
   </div>
@@ -10886,26 +10899,86 @@ function findTodo(id) {
   return null;
 }
 
+// Expanded/collapsed state per group, remembered on this device.
+var OPEN_KEY = 'cpa_todo_open';
+var openGroups = {};
+try { openGroups = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}'); } catch (e) { openGroups = {}; }
+function saveOpenGroups() {
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify(openGroups)); } catch (e) {}
+}
+
+function groupOf(t) {
+  if (t.group) return t.group;
+  return 'General';
+}
+
+function buildTodoItem(t) {
+  var li = document.createElement('li');
+  li.className = 'todo-item';
+  if (t.done) li.className = 'todo-item done';
+  li.setAttribute('data-id', t.id);
+  li.setAttribute('draggable', 'true');
+  li.innerHTML =
+    '<span class="handle" title="Drag to reorder">⠿</span>' +
+    '<input type="checkbox" class="todo-check" title="Mark done">' +
+    '<div class="txt">' + esc(t.text) + '</div>' +
+    '<div class="acts">' +
+      '<button class="todo-edit" title="Edit">✎</button>' +
+      '<button class="todo-del" title="Delete">✕</button>' +
+    '</div>';
+  li.querySelector('.todo-check').checked = t.done;
+  return li;
+}
+
 function renderTodos() {
-  var ul = document.getElementById('todoList');
-  ul.innerHTML = '';
+  var wrap = document.getElementById('todoList');
+  wrap.innerHTML = '';
+
+  // Groups in the order they first appear in the saved order.
+  var names = [];
   todos.forEach(function (t) {
-    var li = document.createElement('li');
-    li.className = 'todo-item';
-    if (t.done) li.className = 'todo-item done';
-    li.setAttribute('data-id', t.id);
-    li.setAttribute('draggable', 'true');
-    li.innerHTML =
-      '<span class="handle" title="Drag to reorder">⠿</span>' +
-      '<input type="checkbox" class="todo-check" title="Mark done">' +
-      '<div class="txt">' + esc(t.text) + '</div>' +
-      '<div class="acts">' +
-        '<button class="todo-edit" title="Edit">✎</button>' +
-        '<button class="todo-del" title="Delete">✕</button>' +
-      '</div>';
-    li.querySelector('.todo-check').checked = t.done;
-    ul.appendChild(li);
+    var g = groupOf(t);
+    if (names.indexOf(g) < 0) names.push(g);
   });
+
+  // Feed the add box's group suggestions.
+  var dl = document.getElementById('todoGroups');
+  dl.innerHTML = '';
+  names.forEach(function (g) {
+    var o = document.createElement('option');
+    o.value = g;
+    dl.appendChild(o);
+  });
+
+  names.forEach(function (g) {
+    var items = todos.filter(function (t) { return groupOf(t) === g; });
+    var doneCount = items.filter(function (t) { return t.done; }).length;
+    var open = !!openGroups[g];
+
+    var sec = document.createElement('div');
+    sec.className = 'todo-group';
+    sec.setAttribute('data-group', g);
+
+    var head = document.createElement('div');
+    head.className = 'todo-ghead';
+    if (doneCount === items.length) head.className = 'todo-ghead alldone';
+    var chev = '▸';
+    if (open) chev = '▾';
+    head.innerHTML =
+      '<span class="chev">' + chev + '</span>' +
+      '<span class="gname">' + esc(g) + '</span>' +
+      '<span class="gcount">' + doneCount + '/' + items.length + '</span>';
+    sec.appendChild(head);
+
+    var ul = document.createElement('ul');
+    ul.className = 'todo-ul';
+    if (!open) ul.className = 'todo-ul hidden';
+    items.forEach(function (t) { ul.appendChild(buildTodoItem(t)); });
+    sec.appendChild(ul);
+
+    wrap.appendChild(sec);
+  });
+
   var empty = document.getElementById('todoEmpty');
   if (todos.length > 0) empty.classList.add('hidden');
   else empty.classList.remove('hidden');
@@ -10922,17 +10995,22 @@ function todoSave(params, failMsg) {
 
 function addTodo() {
   var inp = document.getElementById('todoNew');
+  var ginp = document.getElementById('todoGroup');
   var text = inp.value.trim();
+  var group = ginp.value.trim();
   if (!text) return;
+  if (!group) group = 'General';
   var btn = document.getElementById('todoAddBtn');
   btn.disabled = true;
-  jsonp({ action: 'todoAdd', token: token, text: text }).then(function (res) {
+  jsonp({ action: 'todoAdd', token: token, text: text, group: group }).then(function (res) {
     btn.disabled = false;
     if (!res || res.ok === false) { toast('Add failed: ' + ((res && res.error) || 'error')); return; }
-    todos.push({ id: res.id, text: text, done: false, order: todos.length + 1 });
+    todos.push({ id: res.id, text: text, done: false, order: todos.length + 1, group: group });
     inp.value = '';
+    openGroups[group] = true;   // show the group the new task landed in
+    saveOpenGroups();
     renderTodos();
-    toast('Added');
+    toast('Added to ' + group);
   }).catch(function (err) { btn.disabled = false; toast('Add failed: ' + err.message); });
 }
 
@@ -10960,9 +11038,20 @@ document.getElementById('todoAddBtn').onclick = addTodo;
 document.getElementById('todoNew').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') addTodo();
 });
+document.getElementById('todoGroup').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') addTodo();
+});
 
-// Check / edit / delete via one listener on the list.
+// Expand/collapse, check, edit, delete via one listener on the list.
 document.getElementById('todoList').addEventListener('click', function (e) {
+  var head = e.target.closest('.todo-ghead');
+  if (head) {
+    var g = head.parentNode.getAttribute('data-group');
+    openGroups[g] = !openGroups[g];
+    saveOpenGroups();
+    renderTodos();
+    return;
+  }
   var li = e.target.closest('.todo-item');
   if (!li) return;
   var t = findTodo(li.getAttribute('data-id'));
@@ -10991,16 +11080,36 @@ document.getElementById('todoList').addEventListener('dragover', function (e) {
   e.preventDefault();                // required to allow dropping
   if (!dragLi) return;
   var over = e.target.closest('.todo-item');
-  if (!over || over === dragLi) return;
-  var rect = over.getBoundingClientRect();
-  var below = e.clientY > rect.top + rect.height / 2;
-  if (below) over.parentNode.insertBefore(dragLi, over.nextSibling);
-  else over.parentNode.insertBefore(dragLi, over);
+  if (over && over !== dragLi) {
+    var rect = over.getBoundingClientRect();
+    var below = e.clientY > rect.top + rect.height / 2;
+    if (below) over.parentNode.insertBefore(dragLi, over.nextSibling);
+    else over.parentNode.insertBefore(dragLi, over);
+    return;
+  }
+  // Dropping onto an open group with no items under the cursor: append to that group.
+  var sec = e.target.closest('.todo-group');
+  if (sec) {
+    var ul = sec.querySelector('.todo-ul');
+    if (ul && !ul.classList.contains('hidden') && !ul.contains(dragLi)) {
+      ul.appendChild(dragLi);
+    }
+  }
 });
 document.getElementById('todoList').addEventListener('dragend', function () {
   if (!dragLi) return;
-  dragLi.classList.remove('dragging');
+  var movedLi = dragLi;
+  movedLi.classList.remove('dragging');
   dragLi = null;
+
+  // Did the dragged task land in a different group?
+  var movedT = findTodo(movedLi.getAttribute('data-id'));
+  var newGroup = movedLi.closest('.todo-group').getAttribute('data-group');
+  if (movedT && groupOf(movedT) !== newGroup) {
+    movedT.group = newGroup;
+    todoSave({ action: 'todoUpdate', id: movedT.id, group: newGroup }, 'Move failed');
+  }
+
   // Rebuild the array to match the new DOM order, then save it.
   var ids = [];
   var lis = document.getElementById('todoList').querySelectorAll('.todo-item');
@@ -11011,6 +11120,7 @@ document.getElementById('todoList').addEventListener('dragend', function () {
     if (t) reordered.push(t);
   });
   todos = reordered;
+  renderTodos();   // refresh group counts after a cross-group move
   todoSave({ action: 'todoReorder', ids: ids.join(',') }, 'Reorder failed');
 });
 

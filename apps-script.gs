@@ -227,9 +227,11 @@ function deviceLookup_(p) {
 }
 
 // ---- To-Do list (dashboard "To-Do" tab) ----
-// Items live in a 'Todos' sheet tab: ID | Text | Done | Order | Created.
+// Items live in a 'Todos' sheet tab: ID | Text | Done | Order | Created | Group.
+// Group is the cart/section the task belongs to (e.g. "Cart O"); the dashboard
+// shows each group as a collapsible section. Blank group shows as "General".
 var TODO_SHEET_NAME = 'Todos';
-var TODO_HEADERS = ['ID', 'Text', 'Done', 'Order', 'Created'];
+var TODO_HEADERS = ['ID', 'Text', 'Done', 'Order', 'Created', 'Group'];
 
 function todoSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -239,6 +241,10 @@ function todoSheet_() {
     sh.getRange(1, 1, 1, TODO_HEADERS.length).setValues([TODO_HEADERS]);
     sh.getRange(1, 1, 1, TODO_HEADERS.length).setFontWeight('bold');
     sh.setFrozenRows(1);
+  }
+  // Older versions of this sheet had no Group column - add the header if missing.
+  if (sh.getRange(1, 6).getValue() !== 'Group') {
+    sh.getRange(1, 6).setValue('Group').setFontWeight('bold');
   }
   return sh;
 }
@@ -253,7 +259,10 @@ function todoList_() {
     if (!r[0]) return;
     var done = false;
     if (r[2] === true || r[2] === 'TRUE') done = true;
-    todos.push({ id: String(r[0]), text: String(r[1]), done: done, order: Number(r[3]) || 0 });
+    todos.push({
+      id: String(r[0]), text: String(r[1]), done: done,
+      order: Number(r[3]) || 0, group: String(r[5] || '')
+    });
   });
   todos.sort(function (a, b) { return a.order - b.order; });
   return { ok: true, todos: todos };
@@ -275,7 +284,7 @@ function todoAdd_(p) {
   var sh = todoSheet_();
   var id = String(new Date().getTime());
   var order = sh.getLastRow();   // new items go to the bottom
-  sh.appendRow([id, text, false, order, new Date()]);
+  sh.appendRow([id, text, false, order, new Date(), String(p.group || '').trim()]);
   return { ok: true, id: id };
 }
 
@@ -285,6 +294,7 @@ function todoUpdate_(p) {
   if (!row) return { ok: false, error: 'not found' };
   if (p.text != null) sh.getRange(row, 2).setValue(String(p.text));
   if (p.done != null) sh.getRange(row, 3).setValue(String(p.done) === 'true');
+  if (p.group != null) sh.getRange(row, 6).setValue(String(p.group).trim());
   return { ok: true };
 }
 
@@ -308,57 +318,105 @@ function todoReorder_(p) {
 }
 
 // RUN THIS ONCE from the editor to load the summer 2026 check/repair cross-reference
-// findings into the to-do list. It refuses to run if the Todos tab already has items.
+// findings into the to-do list, grouped by cart. It refuses to run if the Todos tab
+// already has items - delete the Todos tab (or its rows) first to re-seed.
 function seedTodos() {
   var sh = todoSheet_();
   if (sh.getLastRow() > 1) {
     Logger.log('Todos tab already has items - not seeding again.');
     return 'Todos tab already has items - not seeding again.';
   }
+  // [group, task]
   var items = [
-    'Cart O: fix state-testing browser on 20 HP units (2HA99...) - likely enrollment issue, one unit noted not enrolled to @CPAohio.org',
-    'Cart O: fix duplicate serial - #6 and #25 both entered with matching serials (2HA99FEN501098M / 2HA99FEN511183W)',
-    'Cart C: open tickets - #7, #13, #22 missing from cart; #12, #23, #26, #27 chargers dead; #18 not working + testing browser. Flagged since spring break, never ticketed',
-    'Cart G: state-testing browser not working on #25-#28 (also flagged at spring break, no tickets)',
-    'Cart Y: #5, #23, #27 not working with dead chargers - no tickets on file',
-    'Cart K: #26 missing/broken; #1 power key missing; #23 spacebar missing; #8 hinge dislocating; #4 and #18 chargers dead',
-    'Cart K: Adams Smartpass iPad and Karim Shabana iPad both missing/not working',
-    'Cart J: #11 charging port missing, #28 screen scratched + no serial label, #9 hinge super loose - identical notes since spring break, never ticketed',
-    'Cart A #18 (NXHBNAA0019160FFC07600): in repair since 5/15 (screen will not turn on) - never returned',
-    'Cart A (NXHBNAA0019160FE837600): in repair since 4/17 (stuck on white screen) - never returned',
-    'Cart B #13 (NXH8VAA0060400FD467611): screen broken, in repair since 1/14 - never returned; note says headphone jack blocked all year',
-    'Chase 5 iPads never returned from repair: Ljungren DMQSJ599HGSD (9/3/25), Seggerson DMQPH5ZZFK10 (9/22/25), Wand DMQPH9V4FK10 (9/22/25), Caudill DMQPHDLPFK10 (11/11/25), Buechner DMPPDS94FK10 (3/4/26)',
-    'Ljungren Smartpass iPad (DMQPHCTGFK10): screen broken, in repair since 2/27 - never returned; SOY note says Smart Pass not working',
-    'Cart D (NXHBNAA0019252726A7600): 3 wifi repairs with the same complaint - replace wifi card or retire the unit',
-    'Cart N (G5LG0H3): 3 repair visits (trackpad x2, then screen) - consider retiring',
-    'Cart K (NXHBNAA00191610D527600): keyboard still dead after 2 repair visits - repair did not take',
-    'Cart D (NXHBNAA001916101BF7600): came back not working after 4/10 repair, in again 4/24 - verify it is actually fixed',
-    'Cart H: missing keys on #8, #12, #14, #15, #27; hinges on #10 and #19 - no tickets',
-    'Cart H #16: repair log says returned 1/5 but start-of-year check says missing - reconcile',
-    'Cart I #4 and #9: marked returned from enrollment fix 1/5 but start-of-year check says not in cart - locate',
-    'Cart Y #13 and #25: marked returned 1/5 but start-of-year check says missing - locate',
-    'Cart T #26: will not turn on - open ticket',
-    'ESL #6: trackpad broken and taped shut - open ticket',
-    'Cart B: #1 charger dead since spring break; #23 not working; #3 and #7 missing keys; MP1M1ZX2 number keys acting up again after repair',
-    'Cart A: #19 hinge loose; #3 and #7 chargers dead; Eduanny ESL iPad charger missing (flagged both checks)',
-    'Caudill iPad #95 was swapped out - update roster (teacher now has 24 iPads)',
-    'Miller iPad #44: needs an extra charger',
-    'Cart W #28: on loan to SPED - track it and get it back',
-    'Cart V #12: state test app missing - reinstall',
-    'Cart X #1: keys missing',
-    'Cart D #14: D key cap missing (key still works) - since spring break',
-    'Re-check Carts AA, F, Y: checker marked every box TRUE (treated checkmark as OK), so Keys Missing / Hinge Broken columns are unreliable',
-    'Finish start-of-year checks - untouched sheets: BB (Moorman), Aeh, Perez, Moorman iPads, Title 1, Hunter iPad cart'
+    ['Cart A', '#18 (NXHBNAA0019160FFC07600): in repair since 5/15, screen will not turn on - never returned, chase it'],
+    ['Cart A', '(NXHBNAA0019160FE837600): in repair since 4/17, stuck on white screen - never returned, chase it'],
+    ['Cart A', '#19: hinge loose / falls'],
+    ['Cart A', '#3: charger dead + keys work intermittently'],
+    ['Cart A', '#7: charger dead'],
+    ['Cart A', 'Eduanny ESL iPad: replace missing charger (flagged both checks)'],
+    ['Cart B', '#13 (NXH8VAA0060400FD467611): screen broken, in repair since 1/14 - never returned; headphone jack blocked all year'],
+    ['Cart B', '#1: charger dead since spring break'],
+    ['Cart B', '#23 (MP1M1ZXR): not working'],
+    ['Cart B', '#3 (MP1M1ZYY): keys missing'],
+    ['Cart B', '#7 (MP1HDZ13): keys missing'],
+    ['Cart B', '#6 (MP1M1ZX2): number keys acting up again after 4/17 repair - verify'],
+    ['Cart C', '#7: missing from cart - locate'],
+    ['Cart C', '#13: missing from cart - locate'],
+    ['Cart C', '#22: missing from cart - locate'],
+    ['Cart C', '#12: charger dead'],
+    ['Cart C', '#23: charger dead'],
+    ['Cart C', '#26: charger dead + state-testing browser not working'],
+    ['Cart C', '#27: charger dead'],
+    ['Cart C', '#18: not working + state-testing browser not working'],
+    ['Cart D', '(NXHBNAA0019252726A7600): 3 wifi repairs, same complaint each time - replace wifi card or retire'],
+    ['Cart D', '(NXHBNAA001916101BF7600): came back not working after 4/10 repair, in again 4/24 - verify it is actually fixed'],
+    ['Cart D', '#14: D key cap missing (key still works) - since spring break'],
+    ['Cart G', '#25: state-testing browser not working'],
+    ['Cart G', '#26: state-testing browser not working'],
+    ['Cart G', '#27: state-testing browser not working'],
+    ['Cart G', '#28: state-testing browser not working'],
+    ['Cart H', '#16: repair log says returned 1/5 but start-of-year check says missing - reconcile'],
+    ['Cart H', '#8: keys missing'],
+    ['Cart H', '#12: keys missing'],
+    ['Cart H', '#14: keys missing'],
+    ['Cart H', '#15: keys missing'],
+    ['Cart H', '#27: keys missing'],
+    ['Cart H', '#10: hinge broken'],
+    ['Cart H', '#19: hinge broken'],
+    ['Cart I', '#4: marked returned from enrollment fix 1/5 but not in cart - locate'],
+    ['Cart I', '#9: marked returned from enrollment fix 1/5 but not in cart - locate'],
+    ['Cart J', '#11: charging port missing, charger must be plugged in backwards'],
+    ['Cart J', '#28: screen scratched + no serial label'],
+    ['Cart J', '#9: hinge super loose'],
+    ['Cart K', '#26: missing / broken screen'],
+    ['Cart K', '#1: power key missing'],
+    ['Cart K', '#23: spacebar missing'],
+    ['Cart K', '#8: hinge starting to dislocate'],
+    ['Cart K', '#4: charger dead'],
+    ['Cart K', '#18: charger dead'],
+    ['Cart K', '(NXHBNAA00191610D527600): keyboard still dead after 2 repair visits - repair did not take'],
+    ['Cart K', 'Adams Smartpass iPad: missing / not working'],
+    ['Cart K', 'Karim Shabana iPad: missing / not working'],
+    ['Cart N', '(G5LG0H3): 3 repair visits (trackpad x2, then screen) - consider retiring'],
+    ['Cart O', 'Fix state-testing browser on 20 HP units (2HA99...) - likely enrollment issue, one unit noted not enrolled to @CPAohio.org'],
+    ['Cart O', 'Fix duplicate serial - #6 and #25 both entered with matching serials (2HA99FEN501098M / 2HA99FEN511183W)'],
+    ['Cart T', '#26: will not turn on - open ticket'],
+    ['Cart V', '#12: state test app missing - reinstall'],
+    ['Cart W', '#28: on loan to SPED - track it and get it back'],
+    ['Cart X', '#1: keys missing'],
+    ['Cart Y', '#5: not working + charger dead'],
+    ['Cart Y', '#23: not working + charger dead'],
+    ['Cart Y', '#27: not working + charger dead'],
+    ['Cart Y', '#13: marked returned 1/5 but start-of-year check says missing - locate'],
+    ['Cart Y', '#25: marked returned 1/5 but start-of-year check says missing - locate'],
+    ['ESL', '#6: trackpad broken and taped shut - open ticket'],
+    ['iPads', 'Ljungren (DMQSJ599HGSD): in repair since 9/3/25 - never returned, chase it'],
+    ['iPads', 'Seggerson (DMQPH5ZZFK10): in repair since 9/22/25, dead backlight - never returned, chase it'],
+    ['iPads', 'Wand (DMQPH9V4FK10): in repair since 9/22/25, battery EOL - never returned, chase it'],
+    ['iPads', 'Caudill (DMQPHDLPFK10): in repair since 11/11/25, dead battery - never returned, chase it'],
+    ['iPads', 'Buechner (DMPPDS94FK10): screen broken, in repair since 3/4/26 - never returned, chase it'],
+    ['iPads', 'Ljungren Smartpass (DMQPHCTGFK10): screen broken, in repair since 2/27 - never returned; Smart Pass not working'],
+    ['iPads', 'Caudill #95: swapped out - update roster (teacher now has 24 iPads)'],
+    ['iPads', 'Miller #44: needs an extra charger'],
+    ['Checks to finish', 'Re-check Cart AA: every box marked TRUE (checkmark treated as OK) - Keys Missing / Hinge Broken columns unreliable'],
+    ['Checks to finish', 'Re-check Cart F: every box marked TRUE (checkmark treated as OK)'],
+    ['Checks to finish', 'Re-check Cart Y: every box marked TRUE (checkmark treated as OK)'],
+    ['Checks to finish', 'Start-of-year check untouched: BB (Moorman)'],
+    ['Checks to finish', 'Start-of-year check untouched: Aeh iPads'],
+    ['Checks to finish', 'Start-of-year check untouched: Perez iPads'],
+    ['Checks to finish', 'Start-of-year check untouched: Moorman iPads'],
+    ['Checks to finish', 'Start-of-year check untouched: Title 1 iPads'],
+    ['Checks to finish', 'Start-of-year check untouched: Hunter iPad cart']
   ];
   var now = new Date();
   var base = now.getTime();
   var rows = [];
   for (var i = 0; i < items.length; i++) {
-    rows.push([String(base + i), items[i], false, i + 1, now]);
+    rows.push([String(base + i), items[i][1], false, i + 1, now, items[i][0]]);
   }
   sh.getRange(2, 1, rows.length, TODO_HEADERS.length).setValues(rows);
-  Logger.log('Seeded ' + rows.length + ' to-dos.');
-  return 'Seeded ' + rows.length + ' to-dos.';
+  Logger.log('Seeded ' + rows.length + ' to-dos in cart groups.');
+  return 'Seeded ' + rows.length + ' to-dos in cart groups.';
 }
 
 // ---- Photos ----
