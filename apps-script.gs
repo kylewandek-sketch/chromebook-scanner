@@ -317,9 +317,19 @@ function todoReorder_(p) {
   return { ok: true };
 }
 
+// RUN THIS from the editor if your Todos tab still has the old ungrouped items:
+// it DELETES the whole Todos tab (all items and checkmarks, including any you
+// added yourself) and reloads the cross-reference findings grouped by cart.
+function reseedTodos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(TODO_SHEET_NAME);
+  if (sh) ss.deleteSheet(sh);
+  return seedTodos();
+}
+
 // RUN THIS ONCE from the editor to load the summer 2026 check/repair cross-reference
 // findings into the to-do list, grouped by cart. It refuses to run if the Todos tab
-// already has items - delete the Todos tab (or its rows) first to re-seed.
+// already has items - use reseedTodos() to wipe and reload instead.
 function seedTodos() {
   var sh = todoSheet_();
   if (sh.getLastRow() > 1) {
