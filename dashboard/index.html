@@ -105,21 +105,29 @@
   .tab.active { color:var(--ink); border-bottom-color:var(--blue); }
 
   /* To-Do */
-  .todo-add { display:flex; gap:8px; margin-bottom:14px; max-width:760px; }
+  .cart-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+               gap:10px; margin-bottom:16px; }
+  .cart-card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+               padding:14px 12px; cursor:pointer; text-align:center;
+               user-select:none; -webkit-user-select:none; }
+  .cart-card:hover { border-color:var(--blue); }
+  .cart-card.active { border-color:var(--blue); box-shadow:0 0 0 2px var(--blue) inset; }
+  .cart-card .cname { font-size:14px; font-weight:700; margin-bottom:6px; word-break:break-word; }
+  .cart-card .ccount { font-size:13px; color:var(--muted); }
+  .cart-card .ccount b { color:var(--red); font-size:16px; }
+  .cart-card.empty .cname { color:var(--muted); font-weight:600; }
+  .cart-card.alldone .ccount { color:var(--green); }
+  .cart-card.newgroup { border-style:dashed; }
+  .cart-card.newgroup .cname { color:var(--muted); font-weight:600; }
+  .todo-panel { background:var(--card); border:1px solid var(--line); border-radius:12px;
+                padding:16px; max-width:900px; }
+  .tp-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .tp-head h3 { margin:0; font-size:16px; }
+  .tp-head span { color:var(--muted); font-size:13px; }
+  .todo-add { display:flex; gap:8px; margin-top:12px; }
   .todo-add input { flex:1; padding:9px 12px; border:1px solid var(--line); border-radius:8px;
-                    background:var(--card); color:var(--ink); font-size:14px; }
-  .todo-add #todoGroup { flex:0 1 200px; }
-  .todo-list { margin:0; padding:0; max-width:860px; }
-  .todo-group { background:var(--card); border:1px solid var(--line); border-radius:10px;
-                margin-bottom:8px; overflow:hidden; }
-  .todo-ghead { display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer;
-                font-size:14px; font-weight:600; user-select:none; -webkit-user-select:none; }
-  .todo-ghead:hover { background:rgba(128,128,128,.06); }
-  .todo-ghead .chev { color:var(--muted); font-size:12px; width:12px; }
-  .todo-ghead .gname { flex:1; }
-  .todo-ghead .gcount { color:var(--muted); font-weight:400; font-size:13px; }
-  .todo-ghead.alldone .gname { text-decoration:line-through; color:var(--muted); }
-  .todo-ul { list-style:none; margin:0; padding:4px 10px 10px; border-top:1px solid var(--line); }
+                    background:var(--page); color:var(--ink); font-size:14px; }
+  .todo-ul { list-style:none; margin:0; padding:0; }
   .todo-item { display:flex; align-items:flex-start; gap:10px; background:var(--page);
                border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-top:6px; }
   .todo-item.dragging { opacity:.4; }
@@ -231,14 +239,21 @@
     </div>
 
     <div id="todoView" class="hidden">
-      <div class="todo-add">
-        <input type="text" id="todoNew" placeholder="New task…">
-        <input type="text" id="todoGroup" list="todoGroups" placeholder="Cart / group…">
-        <datalist id="todoGroups"></datalist>
-        <button class="btn primary" id="todoAddBtn">Add</button>
+      <div class="cart-grid" id="cartGrid"></div>
+      <div id="todoPanel" class="todo-panel hidden">
+        <div class="tp-head">
+          <h3 id="tpName"></h3>
+          <span id="tpCount"></span>
+          <span style="flex:1"></span>
+          <button class="btn" id="tpClose">✕ Close</button>
+        </div>
+        <ul class="todo-ul" id="todoList"></ul>
+        <div id="tpEmpty" class="empty hidden">No tasks for this cart yet. Add one below.</div>
+        <div class="todo-add">
+          <input type="text" id="todoNew" placeholder="Add a task to this cart…">
+          <button class="btn primary" id="todoAddBtn">Add</button>
+        </div>
       </div>
-      <div class="todo-list" id="todoList"></div>
-      <div id="todoEmpty" class="empty hidden">No to-dos yet. Add one above.</div>
     </div>
   </div>
 </div>
@@ -10899,17 +10914,38 @@ function findTodo(id) {
   return null;
 }
 
-// Expanded/collapsed state per group, remembered on this device.
-var OPEN_KEY = 'cpa_todo_open';
-var openGroups = {};
-try { openGroups = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}'); } catch (e) { openGroups = {}; }
-function saveOpenGroups() {
-  try { localStorage.setItem(OPEN_KEY, JSON.stringify(openGroups)); } catch (e) {}
-}
+// Every cart gets a tile on screen, even with zero tasks.
+// HS_Cart_1 through HS_Cart_6 are six individual carts.
+var CARTS = [
+  'Cart A', 'Cart B', 'Cart C', 'Cart D', 'Cart E', 'Cart F', 'Cart G', 'Cart H',
+  'Cart I', 'Cart J', 'Cart K', 'Cart L', 'Cart M', 'Cart N', 'Cart O', 'Cart P',
+  'Cart Q', 'Cart R', 'Cart S', 'Cart T', 'Cart U', 'Cart V', 'Cart W', 'Cart X',
+  'Cart Y', 'Cart Z', 'Cart AA', 'Cart BB', 'ESL',
+  'HS_Cart_1', 'HS_Cart_2', 'HS_Cart_3', 'HS_Cart_4', 'HS_Cart_5', 'HS_Cart_6', 'HS_Spares'
+];
+
+// Which cart's panel is open, remembered on this device.
+var SEL_KEY = 'cpa_todo_sel';
+var selectedGroup = '';
+try { selectedGroup = localStorage.getItem(SEL_KEY) || ''; } catch (e) { selectedGroup = ''; }
+var extraGroups = [];   // custom groups created this session that have no tasks yet
 
 function groupOf(t) {
   if (t.group) return t.group;
   return 'General';
+}
+
+// Roster carts first, then any group found in the data (iPads, Checks to finish, ...).
+function allGroups() {
+  var names = CARTS.slice();
+  todos.forEach(function (t) {
+    var g = groupOf(t);
+    if (names.indexOf(g) < 0) names.push(g);
+  });
+  extraGroups.forEach(function (g) {
+    if (names.indexOf(g) < 0) names.push(g);
+  });
+  return names;
 }
 
 function buildTodoItem(t) {
@@ -10930,59 +10966,100 @@ function buildTodoItem(t) {
   return li;
 }
 
+function groupItems(g) {
+  return todos.filter(function (t) { return groupOf(t) === g; });
+}
+
 function renderTodos() {
-  var wrap = document.getElementById('todoList');
-  wrap.innerHTML = '';
+  renderCartGrid();
+  renderPanel();
+}
 
-  // Groups in the order they first appear in the saved order.
-  var names = [];
-  todos.forEach(function (t) {
-    var g = groupOf(t);
-    if (names.indexOf(g) < 0) names.push(g);
+function renderCartGrid() {
+  var grid = document.getElementById('cartGrid');
+  grid.innerHTML = '';
+  allGroups().forEach(function (g) {
+    var items = groupItems(g);
+    var open = items.filter(function (t) { return !t.done; }).length;
+
+    var card = document.createElement('div');
+    card.className = 'cart-card';
+    card.setAttribute('data-group', g);
+    if (g === selectedGroup) card.classList.add('active');
+
+    var count;
+    if (items.length === 0) {
+      card.classList.add('empty');
+      count = '0 items';
+    } else if (open === 0) {
+      card.classList.add('alldone');
+      count = '✓ all done (' + items.length + ')';
+    } else {
+      count = '<b>' + open + '</b> to-do';
+      if (open < items.length) count += ' · ' + (items.length - open) + ' done';
+    }
+    card.innerHTML =
+      '<div class="cname">' + esc(g) + '</div>' +
+      '<div class="ccount">' + count + '</div>';
+    grid.appendChild(card);
   });
 
-  // Feed the add box's group suggestions.
-  var dl = document.getElementById('todoGroups');
-  dl.innerHTML = '';
-  names.forEach(function (g) {
-    var o = document.createElement('option');
-    o.value = g;
-    dl.appendChild(o);
-  });
+  // Extra tile for starting a brand-new group (e.g. a project or new cart).
+  var add = document.createElement('div');
+  add.className = 'cart-card newgroup';
+  add.setAttribute('data-newgroup', '1');
+  add.innerHTML = '<div class="cname">＋ New group</div><div class="ccount">name it</div>';
+  grid.appendChild(add);
+}
 
-  names.forEach(function (g) {
-    var items = todos.filter(function (t) { return groupOf(t) === g; });
-    var doneCount = items.filter(function (t) { return t.done; }).length;
-    var open = !!openGroups[g];
+function renderPanel() {
+  var panel = document.getElementById('todoPanel');
+  if (!selectedGroup) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
 
-    var sec = document.createElement('div');
-    sec.className = 'todo-group';
-    sec.setAttribute('data-group', g);
+  var items = groupItems(selectedGroup);
+  var doneCount = items.filter(function (t) { return t.done; }).length;
+  document.getElementById('tpName').textContent = selectedGroup;
+  document.getElementById('tpCount').textContent = doneCount + ' of ' + items.length + ' done';
 
-    var head = document.createElement('div');
-    head.className = 'todo-ghead';
-    if (doneCount === items.length) head.className = 'todo-ghead alldone';
-    var chev = '▸';
-    if (open) chev = '▾';
-    head.innerHTML =
-      '<span class="chev">' + chev + '</span>' +
-      '<span class="gname">' + esc(g) + '</span>' +
-      '<span class="gcount">' + doneCount + '/' + items.length + '</span>';
-    sec.appendChild(head);
+  var ul = document.getElementById('todoList');
+  ul.innerHTML = '';
+  items.forEach(function (t) { ul.appendChild(buildTodoItem(t)); });
 
-    var ul = document.createElement('ul');
-    ul.className = 'todo-ul';
-    if (!open) ul.className = 'todo-ul hidden';
-    items.forEach(function (t) { ul.appendChild(buildTodoItem(t)); });
-    sec.appendChild(ul);
-
-    wrap.appendChild(sec);
-  });
-
-  var empty = document.getElementById('todoEmpty');
-  if (todos.length > 0) empty.classList.add('hidden');
+  var empty = document.getElementById('tpEmpty');
+  if (items.length > 0) empty.classList.add('hidden');
   else empty.classList.remove('hidden');
 }
+
+function selectGroup(g) {
+  if (selectedGroup === g) selectedGroup = '';   // clicking the open cart closes it
+  else selectedGroup = g;
+  try { localStorage.setItem(SEL_KEY, selectedGroup); } catch (e) {}
+  renderTodos();
+  if (selectedGroup) {
+    var panel = document.getElementById('todoPanel');
+    if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+document.getElementById('cartGrid').addEventListener('click', function (e) {
+  var card = e.target.closest('.cart-card');
+  if (!card) return;
+  if (card.getAttribute('data-newgroup')) {
+    var name = prompt('Name for the new group:');
+    if (!name) return;
+    name = name.trim();
+    if (!name) return;
+    if (extraGroups.indexOf(name) < 0) extraGroups.push(name);
+    selectedGroup = name;
+    try { localStorage.setItem(SEL_KEY, selectedGroup); } catch (err) {}
+    renderTodos();
+    return;
+  }
+  selectGroup(card.getAttribute('data-group'));
+});
+
+document.getElementById('tpClose').onclick = function () { selectGroup(selectedGroup); };
 
 function todoSave(params, failMsg) {
   params.token = token;
@@ -10994,12 +11071,11 @@ function todoSave(params, failMsg) {
 }
 
 function addTodo() {
+  if (!selectedGroup) { toast('Click a cart first'); return; }
+  var group = selectedGroup;
   var inp = document.getElementById('todoNew');
-  var ginp = document.getElementById('todoGroup');
   var text = inp.value.trim();
-  var group = ginp.value.trim();
   if (!text) return;
-  if (!group) group = 'General';
   var btn = document.getElementById('todoAddBtn');
   btn.disabled = true;
   jsonp({ action: 'todoAdd', token: token, text: text, group: group }).then(function (res) {
@@ -11007,8 +11083,6 @@ function addTodo() {
     if (!res || res.ok === false) { toast('Add failed: ' + ((res && res.error) || 'error')); return; }
     todos.push({ id: res.id, text: text, done: false, order: todos.length + 1, group: group });
     inp.value = '';
-    openGroups[group] = true;   // show the group the new task landed in
-    saveOpenGroups();
     renderTodos();
     toast('Added to ' + group);
   }).catch(function (err) { btn.disabled = false; toast('Add failed: ' + err.message); });
@@ -11038,20 +11112,9 @@ document.getElementById('todoAddBtn').onclick = addTodo;
 document.getElementById('todoNew').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') addTodo();
 });
-document.getElementById('todoGroup').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') addTodo();
-});
 
-// Expand/collapse, check, edit, delete via one listener on the list.
+// Check, edit, delete via one listener on the panel's task list.
 document.getElementById('todoList').addEventListener('click', function (e) {
-  var head = e.target.closest('.todo-ghead');
-  if (head) {
-    var g = head.parentNode.getAttribute('data-group');
-    openGroups[g] = !openGroups[g];
-    saveOpenGroups();
-    renderTodos();
-    return;
-  }
   var li = e.target.closest('.todo-item');
   if (!li) return;
   var t = findTodo(li.getAttribute('data-id'));
@@ -11080,48 +11143,36 @@ document.getElementById('todoList').addEventListener('dragover', function (e) {
   e.preventDefault();                // required to allow dropping
   if (!dragLi) return;
   var over = e.target.closest('.todo-item');
-  if (over && over !== dragLi) {
-    var rect = over.getBoundingClientRect();
-    var below = e.clientY > rect.top + rect.height / 2;
-    if (below) over.parentNode.insertBefore(dragLi, over.nextSibling);
-    else over.parentNode.insertBefore(dragLi, over);
-    return;
-  }
-  // Dropping onto an open group with no items under the cursor: append to that group.
-  var sec = e.target.closest('.todo-group');
-  if (sec) {
-    var ul = sec.querySelector('.todo-ul');
-    if (ul && !ul.classList.contains('hidden') && !ul.contains(dragLi)) {
-      ul.appendChild(dragLi);
-    }
-  }
+  if (!over || over === dragLi) return;
+  var rect = over.getBoundingClientRect();
+  var below = e.clientY > rect.top + rect.height / 2;
+  if (below) over.parentNode.insertBefore(dragLi, over.nextSibling);
+  else over.parentNode.insertBefore(dragLi, over);
 });
 document.getElementById('todoList').addEventListener('dragend', function () {
   if (!dragLi) return;
-  var movedLi = dragLi;
-  movedLi.classList.remove('dragging');
+  dragLi.classList.remove('dragging');
   dragLi = null;
 
-  // Did the dragged task land in a different group?
-  var movedT = findTodo(movedLi.getAttribute('data-id'));
-  var newGroup = movedLi.closest('.todo-group').getAttribute('data-group');
-  if (movedT && groupOf(movedT) !== newGroup) {
-    movedT.group = newGroup;
-    todoSave({ action: 'todoUpdate', id: movedT.id, group: newGroup }, 'Move failed');
-  }
-
-  // Rebuild the array to match the new DOM order, then save it.
-  var ids = [];
+  // New order for this cart's tasks, straight from the DOM.
+  var panelIds = [];
   var lis = document.getElementById('todoList').querySelectorAll('.todo-item');
-  lis.forEach(function (li) { ids.push(li.getAttribute('data-id')); });
+  lis.forEach(function (li) { panelIds.push(li.getAttribute('data-id')); });
+
+  // Rebuild the full array: other carts keep their order, this cart takes the new one.
   var reordered = [];
-  ids.forEach(function (id) {
+  var allIds = [];
+  todos.forEach(function (t) {
+    if (groupOf(t) === selectedGroup) return;
+    reordered.push(t);
+    allIds.push(t.id);
+  });
+  panelIds.forEach(function (id) {
     var t = findTodo(id);
-    if (t) reordered.push(t);
+    if (t) { reordered.push(t); allIds.push(t.id); }
   });
   todos = reordered;
-  renderTodos();   // refresh group counts after a cross-group move
-  todoSave({ action: 'todoReorder', ids: ids.join(',') }, 'Reorder failed');
+  todoSave({ action: 'todoReorder', ids: allIds.join(',') }, 'Reorder failed');
 });
 
 // filters
