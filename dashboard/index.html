@@ -10774,11 +10774,20 @@ function renderLookup(res) {
       (res.rosterError ? ' (' + esc(res.rosterError) + ')' : '') + '</div>';
   } else {
     h += '<div class="dgrid">' + res.assignments.map(function (a) {
+      // One line per assigned student (a device can have 1-4, one per homeroom).
+      var studentHtml = '—';
+      if (a.students && a.students.length) {
+        studentHtml = a.students.map(function (s) { return esc(s); }).join('<br>');
+      } else if (a.student) {
+        studentHtml = esc(a.student);   // older backend sends a single string
+      }
+      var label = 'Student:';
+      if (a.students && a.students.length > 1) label = 'Students (' + a.students.length + '):';
       return dfield(esc(a.cart),
         '<b>Chromebook #' + esc(a.chromebookNo) + '</b><br>' +
         '<span class="muted">Teacher:</span> ' + (esc(a.teacher) || '—') + '<br>' +
         '<span class="muted">Room:</span> ' + (esc(a.room) || '—') + '<br>' +
-        '<span class="muted">Student:</span> ' + (esc(a.student) || '—'));
+        '<span class="muted">' + label + '</span><br>' + studentHtml);
     }).join('') + '</div>';
   }
   h += '</div>';

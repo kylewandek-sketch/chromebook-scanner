@@ -192,12 +192,29 @@ function deviceLookup_(p) {
       if (hdr.indexOf('serial') < 0) return;             // not a roster tab
       var row = rng.getRow();
       if (row < 3) return;
+      // A device can have 1-4 students assigned, one per homeroom: every column
+      // whose row-2 header says "Student Assigned" holds a name, and row 1 above
+      // it names the homeroom (e.g. "Hepler's HR").
+      var lastCol = Math.min(sh.getLastColumn(), 8);
+      var heads = sh.getRange(1, 1, 2, lastCol).getValues();   // rows 1 and 2
+      var vals = sh.getRange(row, 1, 1, lastCol).getValues()[0];
+      var students = [];
+      for (var c = 3; c <= lastCol; c++) {
+        var hdr2 = String(heads[1][c - 1] || '').toLowerCase();
+        if (hdr2.indexOf('student') < 0) continue;
+        var name = String(vals[c - 1] || '').trim();
+        if (!name) continue;
+        var hr = String(heads[0][c - 1] || '').trim();
+        if (hr) students.push(name + ' (' + hr + ')');
+        else students.push(name);
+      }
       out.assignments.push({
         cart: sh.getName(),
-        teacher: String(sh.getRange(1, 1).getValue() || ''),
-        room: String(sh.getRange(1, 2).getValue() || ''),
-        chromebookNo: String(sh.getRange(row, 1).getValue() || ''),
-        student: String(sh.getRange(row, 3).getValue() || '')
+        teacher: String(heads[0][0] || ''),
+        room: String(heads[0][1] || ''),
+        chromebookNo: String(vals[0] || ''),
+        student: students.join(', '),   // kept for older dashboard versions
+        students: students
       });
     });
   } catch (e) { out.rosterError = String(e); }
